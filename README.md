@@ -381,50 +381,6 @@ The notebook contains:
 
 ---
 
-## Running Inference
-
-To reproduce predictions using the trained checkpoint:
-
-### Step 1
-
-Download:
-
-```text
-checkpoints/best_model.pth
-```
-
-### Step 2
-
-Open:
-
-```text
-GCP_Pose_Estimation_v3.ipynb
-```
-
-### Step 3
-
-Run the notebook from:
-
-```text
-Section 7 – Test Inference
-```
-
-Execute:
-
-* 7.1 Build Test DataFrame
-* 7.2 Create Test Dataset
-* 7.3 Test-Time Augmentation (TTA) Inference
-* 7.4 Save predictions.json
-
-### Output
-
-```text
-predictions.json
-```
-
-will be generated automatically.
-
----
 
 ## predictions.json Format
 
@@ -455,6 +411,7 @@ The project generates:
 * config.json
 * requirements.txt
 * decision_log.md
+* inferance.py
 * README.md
 
 ---
