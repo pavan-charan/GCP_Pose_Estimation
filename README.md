@@ -1,16 +1,29 @@
 # Aerial GCP Pose Estimation
 
 ## Project Overview
-This project provides a deep learning pipeline for detecting and classifying **Ground Control Points (GCPs)** in high-resolution aerial drone imagery. Given an image containing a GCP marker, the system simultaneously predicts:
-1. **Marker Shape Class**: Categorizes the shape into one of three classes: `Cross`, `L-Shaped`, or `Square`.
-2. **Marker Coordinates**: Regresses the precise `(x, y)` pixel coordinates of the marker's center.
 
-Accurate GCP detection and localization are vital components in photogrammetry, surveying, and georeferencing, enabling autonomous drone mapping software to tie aerial images to real-world coordinates.
+This project provides a deep learning pipeline for detecting and classifying Ground Control Points (GCPs) in high-resolution aerial drone imagery.
+
+Given an image containing a GCP marker, the system simultaneously predicts:
+
+1. Marker Shape Class
+
+   * Cross
+   * L-Shaped
+   * Square
+
+2. Marker Coordinates
+
+   * x coordinate
+   * y coordinate
+
+Accurate GCP detection and localization are important for photogrammetry, surveying, and georeferencing workflows.
 
 ---
 
 ## Repository Structure
-```
+
+```text
 .
 ├── GCP_Pose_Estimation_v3.ipynb
 ├── checkpoints/
@@ -19,24 +32,55 @@ Accurate GCP detection and localization are vital components in photogrammetry, 
 ├── config.json
 ├── requirements.txt
 ├── decision_log.md
-├── inference.py
 └── README.md
 ```
 
 ---
 
 ## Model Architecture
-The system utilizes a multi-task learning framework built on top of a state-of-the-art Convolutional Neural Network backbone:
-- **Backbone Choices**: 
-  - **ConvNeXt-Tiny**: The default selection saved in `checkpoints/best_model.pth`. It utilizes modern Vision Transformer design principles (LayerNorm, GELU, depthwise convolutions) for highly stable training and localization.
-  - **EfficientNet-B3**: An alternative highly parameter-efficient CNN backbone.
-- **Input Resolution**: 384×384 pixels (defined in configuration).
-- **Multi-Task Heads**:
-  - **Classification Head**: A fully connected layer mapping backbone features to a 3-class distribution (`Cross`, `L-Shaped`, `Square`) with softmax activation.
-  - **Regression Head**: A fully connected layer outputting normalized 2D coordinates `(x, y)` representing the target center.
-  
-Joint multi-task training encourages the backbone to extract robust geometric representations that benefit both tasks simultaneously.
 
+The final submission uses a multi-task learning architecture built on top of EfficientNet-B3.
+
+### Backbone
+
+* EfficientNet-B3 (ImageNet pretrained)
+* Global Average Pooling
+* Shared Feature Representation
+
+### Multi-Task Heads
+
+#### Classification Head
+
+Predicts one of three marker classes:
+
+* Cross
+* L-Shaped
+* Square
+
+#### Regression Head
+
+Predicts normalized marker coordinates:
+
+* x coordinate
+* y coordinate
+
+Both tasks are trained jointly to encourage the backbone to learn features useful for classification and localization simultaneously.
+
+### Input Resolution
+
+* Crop Size: 800 × 800
+* Model Input Size: 640 × 640
+
+### Why EfficientNet-B3?
+
+EfficientNet-B3 was selected because it provides:
+
+* Excellent classification performance
+* Stable convergence
+* Efficient GPU utilization
+* Faster training on Tesla T4 hardware
+
+---
 ### Pipeline and Model Diagram
 ```mermaid
 graph TD
@@ -60,7 +104,7 @@ graph TD
 
     %% Backbone
     subgraph Feature_Extraction ["Backbone Network"]
-        F["ConvNeXt-Tiny / EfficientNet-B3 Backbone"]:::backbone
+        F["EfficientNet-B3 Backbone"]:::backbone
         G["Global Average Pooling (GAP)"]:::backbone
     end
 
@@ -111,50 +155,105 @@ graph TD
 ```
 
 ---
-
 ## Training Strategy
-To deal with high-resolution imagery and local targets, the model utilizes a crop-based training pipeline:
 
-- **Crop-based Localization**: Rather than resizing the original $4096 \times 3068$ or $4096 \times 2730$ images (which erases the target's visual features), we extract local $800 \times 800$ crops centered around the target during training, preserving spatial resolution.
-- **Random Crop Jitter**: A jitter fraction of up to $0.4$ is applied around the annotated markers to ensure the model remains translation-invariant and robust to offset errors.
-- **Data Augmentations**: Implemented via `albumentations`:
-  - Horizontal & Vertical Flips
-  - Random 90-Degree Rotations
-  - Brightness & Contrast adjustments
-  - Hue, Saturation, and Value shifts
-  - Gaussian Noise & Gaussian Blur to simulate atmospheric distortion
-- **Optimizer & Scheduler**:
-  - **Optimizer**: `AdamW` with a weight decay of $10^{-4}$ for stable regularization.
-  - **Scheduler**: `OneCycleLR` with a maximum learning rate of $3 \times 10^{-4}$ for rapid convergence.
-- **Loss Formulation**:
-  - **Classification**: Weighted CrossEntropyLoss to adjust for any class frequency imbalances.
-  - **Localization**: **Wing Loss** to maximize coordinate regression sensitivity to small errors while remaining robust to label noise.
-  - **Combined Multi-Task Loss**:
-    $$\text{Total Loss} = 2.0 \times \text{Localization Loss} + 1.0 \times \text{Classification Loss}$$
+### Crop-Based Localization
+
+Instead of resizing the original 4096 × 3068 or 4096 × 2730 images directly, local crops centered around the annotated marker are extracted.
+
+This preserves marker details and improves localization accuracy.
+
+### Crop Jitter
+
+A jitter fraction of 0.4 is applied during training.
+
+This prevents the marker from always appearing at the center of the crop and improves localization robustness.
+
+### Data Augmentation
+
+Implemented using Albumentations:
+
+* Horizontal Flip
+* Vertical Flip
+* RandomRotate90
+* Random Brightness / Contrast
+* Hue / Saturation / Value Adjustment
+* Gaussian Blur
+* Gaussian Noise
+
+### Optimizer and Scheduler
+
+Optimizer:
+
+* AdamW
+
+Scheduler:
+
+* OneCycleLR
+
+### Loss Functions
+
+Classification:
+
+* Weighted CrossEntropyLoss
+
+Localization:
+
+* SmoothL1Loss (beta = 0.02)
+
+Combined Loss:
+
+```text
+Total Loss =
+2.0 × Localization Loss +
+1.0 × Classification Loss
+```
+
+The localization loss was given a larger weight because classification converged much faster than coordinate regression.
 
 ---
 
 ## Challenges and Mitigations
-- **Class Imbalance**: Standardized training distributions were stabilized by applying a weighted CrossEntropyLoss.
-- **Marker Localization Difficulty & Full-Image Failure**: In early stages, a full-image regression pipeline was evaluated. Due to heavy downsampling from $4096 \times 3068$ to lower resolutions, the tiny GCP targets (often occupying only $50 \times 50$ pixels in the original image) lost their structural fidelity and collapsed into a few pixels.
-- **Center-Bias Issue**: In full-image regression, the network failed to locate the small targets, causing the regression head to collapse and predict values close to the center coordinates of the image dataset to minimize loss.
-- **Crop-Based Mitigation**: Extracting local crops preserves the sub-pixel resolution details of the markers, allowing the model to easily classify shapes and regress fine-grained coordinates, leading to a highly successful final submission.
+
+### Class Imbalance
+
+Weighted CrossEntropyLoss was used to compensate for differences in class frequencies.
+
+### Full-Image Localization Failure
+
+A full-image regression experiment was conducted.
+
+Although classification achieved near-perfect performance, localization failed because the GCP marker became extremely small after resizing the full-resolution images.
+
+### Center-Bias Collapse
+
+The regression head converged toward predicting coordinates near the dataset mean rather than learning the true marker location.
+
+### Crop-Based Mitigation
+
+Using local crops preserved marker details and enabled meaningful coordinate regression.
+
+This approach was selected for the final submission.
 
 ---
 
 ## Downloading the Trained Model
-Due to size limits, model checkpoints are stored externally.
 
-### Model Weights
-<https://drive.google.com/file/d/1nhoshvUJkrldjF7vom5zKo7CU9-KPG6A/view?usp=sharing>
+The trained model weights are available at:
 
+https://drive.google.com/file/d/1nhoshvUJkrldjF7vom5zKo7CU9-KPG6A/view?usp=sharing
 
-**Destination File Path:** `checkpoints/best_model.pth`
+Save the downloaded file as:
+
+```text
+checkpoints/best_model.pth
+```
 
 ---
 
 ## Environment Setup
-To set up the workspace and install the required dependencies, run:
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -163,9 +262,10 @@ pip install -r requirements.txt
 ---
 
 ## Dataset Setup
-The dataset should match the following directory structure:
 
-```
+Expected dataset structure:
+
+```text
 dataset/
 ├── train_dataset/
 │   ├── gcp_marks.json
@@ -174,37 +274,94 @@ dataset/
     └── ...
 ```
 
-Before running, update the config dictionary in the configuration cell of the notebook or specify the CLI arguments when using the inference script.
+Update the dataset paths in the configuration cell:
+
+```python
+CFG = dict(
+    TRAIN_DIR="...",
+    TEST_DIR="...",
+    LABEL_JSON="...",
+    CKPT_DIR="..."
+)
+```
 
 ---
 
 ## Reproducing Training
-1. Open the PyTorch notebook: `GCP_Pose_Estimation_v3.ipynb`
-2. Run all cells sequentially.
-3. The training loop, validation loops, metric calculations, and final inferences are all contained within this single notebook.
+
+1. Open:
+
+```text
+GCP_Pose_Estimation_v3.ipynb
+```
+
+2. Update the dataset paths.
+
+3. Run all notebook cells sequentially.
+
+The notebook contains:
+
+* Data preparation
+* EDA
+* Dataset creation
+* Model definition
+* Training
+* Validation
+* Inference
+* Prediction export
 
 ---
 
-## Running Inference Using the Standalone Script
-A production-grade Python script `inference.py` has been added to execute the predictions on the test dataset using Test-Time Augmentation (TTA).
+## Running Inference
 
-To generate the predictions:
+To reproduce predictions using the trained checkpoint:
 
-```bash
-python inference.py --test_dir dataset/test_dataset --checkpoint checkpoints/best_model.pth --output predictions.json
+### Step 1
+
+Download:
+
+```text
+checkpoints/best_model.pth
 ```
 
-### Script Key Features:
-* **Auto-Architecture Detection**: Automatically detects whether the checkpoint contains ConvNeXt-Tiny or EfficientNet-B3 weights and initializes the network accordingly.
-* **Cross-Platform Compatibility**: Automatically patches environment paths, allowing seamless checkpoint loading on both Windows and Linux hosts.
-* **Test-Time Augmentation (TTA)**: Averages predictions from horizontal and vertical flips to maximize coordinate accuracy.
+### Step 2
 
-*Alternatively, test predictions can also be reproduced by running Section 7 (Test Inference) of `GCP_Pose_Estimation_v3.ipynb` sequentially.*
+Open:
+
+```text
+GCP_Pose_Estimation_v3.ipynb
+```
+
+### Step 3
+
+Run the notebook from:
+
+```text
+Section 7 – Test Inference
+```
+
+Execute:
+
+* 7.1 Build Test DataFrame
+* 7.2 Create Test Dataset
+* 7.3 Test-Time Augmentation (TTA) Inference
+* 7.4 Save predictions.json
+
+### Output
+
+```text
+predictions.json
+```
+
+will be generated automatically.
 
 ---
 
 ## predictions.json Format
-The output coordinates and labels are exported in the following JSON schema, matching the training annotation format:
+
+The output file follows exactly the same schema as the training annotations.
+
+Example:
 
 ```json
 {
@@ -221,17 +378,33 @@ The output coordinates and labels are exported in the following JSON schema, mat
 ---
 
 ## Final Outputs
-Upon successful execution, the following key outputs are produced:
-- `checkpoints/best_model.pth`: The trained multi-task PyTorch model weights.
-- `predictions.json`: The predicted GCP center coordinates and shape classifications for the test dataset.
-- `config.json`: Notebook configuration snapshot.
-- `requirements.txt`: Python package dependency listings.
-- `decision_log.md`: Development decisions and log.
-- `inference.py`: Command-line inference script.
+
+The project generates:
+
+* checkpoints/best_model.pth
+* predictions.json
+* config.json
+* requirements.txt
+* decision_log.md
+* README.md
 
 ---
 
 ## Results Summary
-- **Shape Classification**: Near-perfect classification with a Macro F1 score of $\approx 1.0$.
-- **Model Choice**: **ConvNeXt-Tiny** selected as the optimal multi-task architecture for final weights.
-- **Pipeline Choice**: **Crop-based localization pipeline** successfully mitigated center-bias and downsampling information loss, delivering highly accurate coordinate regression.
+
+### Classification
+
+* Macro F1 Score ≈ 1.0
+* Near-perfect shape classification
+
+### Localization
+
+The crop-based localization pipeline successfully avoided center-bias collapse observed during full-image regression experiments.
+
+### Final Submission Model
+
+* EfficientNet-B3
+* Multi-Task Classification + Localization
+* Crop-Based Training Pipeline
+* SmoothL1Loss for Localization
+* Weighted CrossEntropyLoss for Classification
