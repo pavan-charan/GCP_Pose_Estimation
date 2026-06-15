@@ -212,6 +212,75 @@ Total Loss =
 The localization loss was given a larger weight because classification converged much faster than coordinate regression.
 
 ---
+## Running Inference Using the Standalone Script
+
+A standalone inference script (`inference.py`) is provided to generate predictions on the test dataset using the trained EfficientNet-B3 checkpoint.
+
+### Generate Predictions
+
+```bash
+python inference.py \
+    --test_dir dataset/test_dataset \
+    --checkpoint checkpoints/best_model.pth \
+    --output predictions.json
+```
+
+### Required Files
+
+```text
+project_root/
+├── checkpoints/
+│   └── best_model.pth
+├── dataset/
+│   └── test_dataset/
+├── inference.py
+└── predictions.json
+```
+
+### Script Features
+
+* Loads the trained EfficientNet-B3 model checkpoint.
+* Performs preprocessing identical to training.
+* Runs inference on all test images.
+* Applies Test-Time Augmentation (TTA) for improved robustness.
+* Converts normalized predictions back to original image coordinates.
+* Generates a predictions.json file matching the training annotation format.
+
+### Output
+
+The script produces:
+
+```text
+predictions.json
+```
+
+with entries in the format:
+
+```json
+{
+  "image.jpg": {
+    "mark": {
+      "x": 1234.56,
+      "y": 987.65
+    },
+    "verified_shape": "Cross"
+  }
+}
+```
+
+### Alternative Notebook Inference
+
+Predictions can also be reproduced directly from the notebook:
+
+1. Open `GCP_Pose_Estimation_v3.ipynb`
+2. Load the trained checkpoint
+3. Run Section 7 (Test Inference):
+
+   * 7.1 Build Test DataFrame
+   * 7.2 Test Dataset
+   * 7.3 TTA Inference
+   * 7.4 Save predictions.json
+
 
 ## Challenges and Mitigations
 
